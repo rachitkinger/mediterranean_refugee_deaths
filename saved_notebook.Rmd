@@ -1,0 +1,317 @@
+---
+title: "Missing Migrants Across The Mediterranean Sea Routes"
+author: "Rachit Kinger"
+date: "8 Jun 2018"
+output:
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Exploring the data  
+
+```{r build_environment}
+loadPackages <- function() {
+  library(dplyr)
+  library(ggplot2)
+  library(knitr)
+  library(DT)
+  library(lubridate)
+  library(gganimate)
+}
+
+suppressPackageStartupMessages(loadPackages())
+
+```
+**NOTE**: Although the original source of this data is [Missing Migrants Project](https://missingmigrants.iom.int/) I received this file from Jonathan Miller via the wikitribune-community on slack.  
+
+Before making any final conclusions from this analysis please take a look at the [methodology](https://missingmigrants.iom.int/methodology) on how this data was collected. Here are a few important points to note regarding methodology:  
+
+* Only those migrants who died in a country different from their residence have been recorded  
+* If a corpse was found, some inferences were made based on features of the corpse, where the corpse was found, etc.  
+* The count excludes deaths that occur in immigration detention facilities, during deportation, or after forced return to a migrant’s homeland, as well as deaths more loosely connected with migrants´ irregular status, such as those resulting from labour exploitation. Deaths in refugee camps are included  
+* Data collection: "...data are relayed from relevant national authorities to IOM field missions, who then share it with the Missing Migrants Project team. Data are also obtained by IOM and other organizations that receive survivors at landing points in Italy and Greece. IOM and UNHCR also regularly coordinate to validate data on missing migrants in the Mediterranean."  
+
+Also note that the original data has one other piece of information called, _Source quality_, that is currently not found on the file used for this analysis. Source quality is a number assigned to each incident and ranges from 1 to 5, with 5 having the highest quality.  
+
+
+```{r upload_data, warning=FALSE, message=FALSE}
+raw <- readr::read_csv("Mediterranean refugee deaths.csv")
+```
+
+```{r}
+# convert date into correct data type  
+raw$`Reported Date` <- lubridate::mdy(raw$`Reported Date`)
+```
+
+**Time period of analysis**  
+
+```{r}
+paste0("From ", min(raw$`Reported Date`), " to ", max(raw$`Reported Date`))
+```
+
+Looking at total recorded incidents, and then breakdown by route, gender, adult/children, etc.  
+
+Total incidents in data set = `r nrow(raw)` 
+
+```{r message=FALSE, warning=FALSE}
+raw %>% 
+  select(`Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE))) %>% 
+  kable()
+  
+```
+
+```{r}
+raw %>% 
+  select(`Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE))) %>% 
+  tidyr::gather(key = Name, value = Number) %>% 
+  ggplot() + 
+  geom_col(mapping = aes(x = reorder(Name, -Number), y = Number, fill = Name), position = "dodge") + 
+  geom_text(mapping = aes(x = Name, y = Number, label = scales::comma(Number)), nudge_y = 2000 ) +
+  coord_flip() +
+  theme(legend.position= "", legend.title=element_blank()) +
+  xlab("") + ylab("") +
+  ggtitle("Migrants: Dead, Survived or Missing",
+          subtitle = "Jan-2014 to May-2018")
+```
+
+There is little data on gender and age of migrants mising or dead. Where reported the number of females/males/children reports the numbers on missing or dead migrants.  
+
+
+```{r message=FALSE, warning=FALSE}
+raw %>% 
+  group_by(`Reported Year`) %>% 
+  select(`Reported Year`, `Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE))) 
+```
+_NB:_ At this point, it is worth noting that as far as details on survivors go, this dataset does **not** show the accurate data for survivors. Since the Missing Migrants Project aims to capture _missing (or dead)_ migrants the data provides the best available data for _missing (or dead)_ migrants but not on those who have survived. A look at the [numbers published](https://www.iom.int/news/mediterranean-migrant-arrivals-reached-171635-2017-deaths-reach-3116) by International Organization for Migration (IOM) confirms that the number of arrivals in the Mediterranean region in years 2016 and 2017 were 363,504 and 171,635 respectively.  
+
+
+```{r message=FALSE, warning=FALSE}
+raw %>% 
+  group_by(`Reported Year`) %>% 
+  select(`Reported Year`, `Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE)))  %>% 
+  ggplot(aes(x = `Reported Year`)) +
+  geom_col(aes(y = `Number Dead` + `Number Missing`, fill = "Total Dead and Missing"), alpha = 0.5) + 
+  geom_line(aes(y = `Number Dead`, colour = "Number Dead")) +
+  geom_line(aes(y = `Number Missing`, colour = "Number Missing")) +
+  theme(legend.position="bottom", legend.title=element_blank()) +
+  ggtitle("Migrant Deaths Over The Years") +
+  ylab("")
+  
+```
+
+The total migrant deaths/missing seemed to have peaked in 2016 and is on a downward trend. Strangely there were more deaths reported than missing in the year 2015. As the deaths and missing increased till 2016, so did the number of survivors (16,216). We know that 2016 was the peak for the year of migration across the Mediterranean.  
+
+```{r message=FALSE, warning=FALSE}
+# monthly pattern  
+raw %>% 
+  group_by(`Reported Year`, `Reported Month`) %>% 
+   select(`Reported Year`, `Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE))) %>% 
+  mutate(Date = lubridate::dmy(paste0("01-",`Reported Month`, "-",`Reported Year`))) %>% 
+  mutate(Season = if_else(`Reported Month` %in% c("Jan", "Feb", "Mar"), "Winter",
+                          if_else(`Reported Month` %in% c("Apr", "May", "Jun"), "Spring",
+                                  if_else(`Reported Month` %in% c("Jul", "Aug", "Sep"), "Summer", "Autumn")))) %>% 
+  ggplot(aes(x = `Date`)) +
+  geom_col(aes(y = `Number Dead` + `Number Missing`, fill = "Total Dead & Missing"), alpha = 0.5) + 
+  geom_line(aes(y = `Number Dead`, colour = "Number Dead")) +
+  geom_line(aes(y = `Number Missing`, colour = "Number Missing")) +
+  theme(legend.position="bottom", legend.title=element_blank()) +
+  ggtitle("Migrant Deaths Over The Years") +
+  ylab("")
+```
+
+
+
+```{r warning = FALSE, message=FALSE}
+raw %>% 
+  mutate(Season = if_else(`Reported Month` %in% c("Jan", "Feb", "Mar"), "Winter",
+                          if_else(`Reported Month` %in% c("Apr", "May", "Jun"), "Spring",
+                                  if_else(`Reported Month` %in% c("Jul", "Aug", "Sep"), "Summer", "Autumn")))) %>% 
+  group_by(`Reported Year`, Season) %>% 
+   select(`Reported Year`, `Number Dead`, `Number Missing`, `Number of Survivors`,
+         `Number of Females`, `Number of Males`, `Number of Children`) %>% 
+  summarise_all(funs(sum(., na.rm = TRUE))) %>% 
+   ggplot(aes(x = `Reported Year`)) +
+   geom_col(aes(y = `Number Dead` + `Number Missing` + `Number of Survivors`, fill = factor(Season, levels = c("Winter", "Spring", "Summer", "Autumn"), ordered = TRUE)), position = "dodge", alpha = 0.2) +
+   geom_col(aes(y = `Number Dead` + `Number Missing` , fill = factor(Season, levels = c("Winter", "Spring", "Summer", "Autumn"), ordered = TRUE)), position = "dodge", alpha = 1) +
+  scale_alpha("Alpha",range = c(0.2, 1), labels = c("Total Attempted", "Total Dead/Missing")) +
+  theme(legend.position="bottom", legend.title=element_blank()) +
+  ggtitle("Total Migrants in Reported Incidents v/s Total Dead or Missing - Seasonal Variation",
+          subtitle = "The faded colours represent those who survived, the darker ones represent those who did not") +
+   ylab("")
+
+```
+
+
+The trend of increasing total migrations in warmer seasons i.e., spring and summer, is consistent across the years 2014-16 however, 2017 and 2018 show different trends. For one, the total attempted migration dipped in the summer of 2017 and started to increase in autum and stayed relatively high in the winter of 2018. Note again that this data does not include *all* migrants who arrived in Europe by sea.
+
+
+### Missing Migrants By Migration Routes  
+
+It is perhaps worth looking into the migration routes and whether there is a difference in patterns of how many migrants go missing. Note that for this analysis, due the absence of data on total migrant arrivals into Europe, we cannot claim to make any judgements on whether a particular route is safer or riskier than the other.  
+
+
+```{r mediterranean_region, warning = FALSE, message=FALSE}
+world <- map_data("world")
+md <- ggplot() +
+  geom_map(data = world, map = world, aes(x = long, y = lat, map_id = region), colour = "white", fill = "gray50", size = 0.2) + 
+  ylim(c(29, 47)) + 
+  xlim(c(-8, 42)) + 
+  coord_quickmap() +
+  theme(panel.background = element_rect(fill = 'light blue')) + labs(x="", y="")
+```
+
+```{r message=FALSE, warning=FALSE}
+route_totals <- raw %>% 
+  group_by(`Migration Route`) %>% 
+  summarise(lat = mean(Latitude, na.rm = TRUE),
+            long = mean(Longitude, na.rm = TRUE),
+            `Total Missing Migrants` = sum(`Total Dead and Missing`, na.rm = TRUE))
+  
+md + 
+  geom_point(data = route_totals,
+             aes(x = long, y = lat, size = `Total Missing Migrants`),
+             alpha = 0.70,
+             colour = "salmon") +
+  scale_size_continuous(range = c(3, 13)) +
+  theme(legend.position = "bottom") +
+  ggtitle("Total Missing Migrants By Different Routes")
+```
+
+```{r fig.show="animate", message=FALSE, warning=FALSE}
+raw <- raw %>% 
+  mutate(`Missing Migrants` = `Total Dead and Missing`) %>% 
+  mutate(month_year = ymd(paste0(year(`Reported Date`), "-",month(`Reported Date`),"-01"))) %>% 
+  arrange(`Reported Date`)
+
+md_time <- md  +
+  geom_point(data = select(raw, Longitude, Latitude, month_year, `Migration Route`, `Missing Migrants`),
+             aes(x = Longitude, y = Latitude,
+                 frame = month_year,
+                 cumulative = TRUE,
+                 colour = `Migration Route`,
+                 size = `Missing Migrants`),
+             alpha = 1/2) +
+  ggtitle("Total Reported Missing Migrants")
+
+```
+
+
+```{r migration_time_lapse, fig.show="animate", message=FALSE, warning=FALSE}
+animation::ani.options(other.opts = "-pix_fmt rgb24")
+gganimate(p = md_time, interval = 0.05, saver = "mp4")
+```
+
+An observation from the timelapse is that towards the latter part of 2017 and the early months of 2018, Wester Mediterranean Route has become more popular. It is worth checking why that is the case.  
+
+### Survival Rate  
+Another thing worth checking is whether the proportion of dead/missing versus survived has changed over time. _Note again that this referes to survivers who are part of reported incidents that led to migrants missing._ Another way to think of this is that when incidents happen what proportion of migrants survive.      
+
+```{r fig.height=6, warning=FALSE, message = FALSE}
+raw %>% 
+  rowwise() %>% 
+  mutate(`Group Size of Migration Mission` = sum(`Total Dead and Missing`,`Number of Survivors`, na.rm = TRUE)) %>% 
+  mutate(`Survival Rate` = if_else(is.na(`Number of Survivors`/`Group Size of Migration Mission`), 0,
+                                   round(`Number of Survivors`/`Group Size of Migration Mission`, digits = 4))) %>% 
+  ggplot() +
+  geom_point(aes(x = month_year, y = `Survival Rate`,
+                 size = `Group Size of Migration Mission`, 
+                 colour = `Migration Route`), position = "jitter", alpha = 0.70) +
+  ggtitle("Survival Rate Of Each Mission Since 2014") +
+  xlab("") +
+  theme_bw() +
+  theme(panel.border = element_blank(), 
+        legend.position = "bottom",
+        legend.direction = "vertical") +
+  scale_y_continuous(labels = scales::percent)
+```
+
+A few things stand out in this graphic:  
+
+* The bigger circles (size of circle denoting the number of migrants on that mission) tend to have a higher survival rate  
+* The incidents along the line of 0% survival rate are mostly small circles (denoting smaller groups)  
+* The Eastern Mediterranean Region tended to have a higher prevelance during the mid 2015 to early 2016  
+
+It is probably worth investigating if bigger groups tend to be more organised. Perhaps their missions are supported by NGOs? The converse is possibly worth investigating for smaller group sizes as well, whether they are lesser prepared for these missions.  
+
+If one were to run any correlations to predict survival rates, it would probably be wise to include size of group as a predictor. Time (at least the month and year of mission) also seem like important predictors.  
+
+Let's now look a little more closely if the same visualisation is split into three different visualisations, one for each migration route.  
+
+```{r warning = FALSE, message=FALSE}
+raw %>% 
+  rowwise() %>% 
+  mutate(`Group Size of Migration Mission` = sum(`Total Dead and Missing`,`Number of Survivors`, na.rm = TRUE)) %>% 
+  mutate(`Survival Rate` = if_else(is.na(`Number of Survivors`/`Group Size of Migration Mission`), 0,
+                                   round(`Number of Survivors`/`Group Size of Migration Mission`, digits = 4))) %>% 
+  ggplot() +
+  geom_point(aes(x = month_year, y = `Survival Rate`,
+                 size = `Group Size of Migration Mission`, 
+                 colour = `Migration Route`), position = "jitter", alpha = 0.70) +
+  facet_grid(.~`Migration Route`) + 
+  ggtitle("Survival Rate Of Each Mission Since 2014") +
+  xlab("") +
+  theme_bw() +
+  theme(panel.border = element_blank(), 
+        legend.position = "bottom") +
+  guides(colour = FALSE) +
+  scale_y_continuous(labels = scales::percent)
+```
+Going purely from this plot it appears that Western and Easter Mediterranean routes tend to have smaller group sizes as compared to the Central Mediterranean route, but then again this data is only applicable for reported missing migrants hence we do not whether the successful missions (which aren't part of this dataset) might have larger group sizes.  
+
+### Points for further analysis  
+
+1. Procure data on successful migration missions  
+2. Investigate why there are time related trends across Eastern and Western Mediterranean routes i.e.,  
+ 2.a. Eastern route saw a spike in incidents in mid-2015 to early 2016  
+ 2.b. Western route saw a spike in incidents in 2017  
+3. Whether difference in mission group size has a role to play in the safety of the mission  
+
+
+
+
+# Appendix  
+Original column names and their description as provided by Missing Migrants Project.  
+
+Variable Name | Description
+-------|------------------------------------------------  
+Web ID | An automatically generated number used to identify each unique entry in the dataset.  
+Region of incident | The region in which an incident took place. For more about regional classifications used in the dataset, [click here](https://missingmigrants.iom.int/regional-classifications).  
+Reported date | Estimated date of death. In cases where the exact date of death is not known, this variable indicates the date in which the body or bodies were found. In cases where data are drawn from surviving migrants, witnesses or other interviews, this variable is entered as the date of the death as reported by the interviewee.  At a minimum, the month and the year of death is recorded. In some cases, official statistics are not disaggregated by the incident, meaning that data is reported as a total number of deaths occurring during a certain time period. In such cases the entry is marked as a “cumulative total,” and the latest date of the range is recorded, with the full dates recorded in the comments.  
+Reported year | The year in which the incident occurred.  
+Reported month | The month in which the incident occurred.  
+Number dead | The total number of people confirmed dead in one incident, i.e. the number of bodies recovered.  If migrants are missing and presumed dead, such as in cases of shipwrecks, leave blank.  
+Number missing | The total number of those who are missing and are thus assumed to be dead.  This variable is generally recorded in incidents involving shipwrecks.  The number of missing is calculated by subtracting the number of bodies recovered from a shipwreck and the number of survivors from the total number of migrants reported to have been on the boat.  This number may be reported by surviving migrants or witnesses.  If no missing persons are reported, it is left blank.  
+Total dead and missing | The sum of the ‘number dead’ and ‘number missing’ variables.  
+Number of survivors | The number of migrants that survived the incident, if known. The age, gender, and country of origin of survivors are recorded in the ‘Comments’ variable if known. If unknown, it is left blank  
+Number of females | Indicates the number of females found dead or missing. If unknown, it is left blank. 
+Number of males | Indicates the number of males found dead or missing. If unknown, it is left blank.  
+Number of children | Indicates the number of individuals under the age of 18 found dead or missing. If unknown, it is left blank.  
+Age | The age of the decedent(s). Occasionally, an estimated age range is recorded. If unknown, it is left blank.  
+Country of origin | Country of birth of the decedent. If unknown, the entry will be marked “unknown”.  
+Region of origin | Region of origin of the decedent(s). In some incidents, region of origin may be marked as “Presumed” or “(P)” if migrants travelling through that location are known to hail from a certain region. If unknown, the entry will be marked “unknown”.  
+Cause of death | The determination of conditions resulting in the migrant's death i.e. the circumstances of the event that produced the fatal injury. If unknown, the reason why is included where possible.  For example, “Unknown – skeletal remains only”, is used in cases in which only the skeleton of the decedent was found.  
+Location description | Place where the death(s) occurred or where the body or bodies were found. Nearby towns or cities or borders are included where possible. When incidents are reported in an unspecified location, this will be noted.  
+Location coordinates |  Place where the death(s) occurred or where the body or bodies were found. In many regions, most notably the Mediterranean, geographic coordinates are estimated as precise locations are not often known. The location description should always be checked against the location coordinates.  
+Migration route | Name of the migrant route on which incident occurred, if known. If unknown, it is left blank.  
+UNSD geographical grouping | Geographical region in which the incident took place, as designated by the United Nations Statistics Division (UNSD) geoscheme. For more about regional classifications used in the dataset, [click here](https://missingmigrants.iom.int/regional-classifications).  
+Source quality | Incidents are ranked on a scale from 1-5 based on the source(s) of information available. Incidents ranked as level 1 are based on information from only one media source. Incidents ranked as level 2 are based on information from uncorroborated eyewitness accounts or data from survey respondents. Incidents ranked as level 3 are based on information from multiple media reports, while level 4 incidents are based on information from at least one NGO, IGO, or another humanitarian actor with direct knowledge of the incident. Incidents ranked at level 5 are based on information from official sources such as coroners, medical examiners, or government officials OR from multiple humanitarian actors.  
+Comments | Brief description narrating additional facts about the death.  If no extra information is available, this is left blank.  
+
+## Code used for output of file  
+
+The analysis was done on R using RStudio. The code used is made available in [my github repository](https://github.com/rachitkinger/mediterranean_refugee_deaths).   
+
+
